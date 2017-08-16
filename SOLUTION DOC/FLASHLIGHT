@@ -1,0 +1,50 @@
+
+    // TODO: Flash Button Here
+    ImageView btnFlash;
+
+    private void flashCameraCapture() {
+        btnFlash = (ImageView) findViewById(R.id.btnFlash);
+        turnOnTheFlash();
+    }
+
+    private void turnOnTheFlash() {
+        /*
+         * First check if device is supporting flashlight or not
+		 */
+        hasFlash = getApplicationContext().getPackageManager()
+                .hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH);
+
+        if (!hasFlash) {
+            // device doesn't support flash
+            // Show alert message and close the application
+            AlertDialog alert = new AlertDialog.Builder(this)
+                    .create();
+            alert.setTitle("Error");
+            alert.setMessage("Sorry, your device doesn't support flash light!");
+            alert.setButton("OK", new DialogInterface.OnClickListener() {
+                public void onClick(DialogInterface dialog, int which) {
+                    // closing the application
+                    finish();
+                }
+            });
+            alert.show();
+            return;
+        }
+
+        btnFlash.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
+
+                //Toast.makeText(app, "Hello Flash", Toast.LENGTH_SHORT).show();
+                if (isFlashOn) {
+                    // turn off flash
+                    turnOffFlash();
+                } else {
+                    // turn on flash
+                    turnOnFlash();
+                }
+
+            }
+        });
+
+    }
