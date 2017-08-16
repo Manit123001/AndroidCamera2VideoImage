@@ -1,6 +1,20 @@
+onCreate()....
+```
+  // Create an instance of Camera
+        getCamera();
+        
+        mCamera = camera;
+//        params = camera.getParameters();
+
+        flashCameraCapture();
+
+
 ```
 
- // TODO: Flash Button Here
+method call
+```
+
+// TODO: Flash Button Here
     ImageView btnFlash;
 
     private void flashCameraCapture() {
@@ -51,12 +65,7 @@
     }
 
 
-    // Capture Button
-    public void doTakePhoto(View v) {
-        mCamera.autoFocus(myAutoFocusCallback);
-        Toast.makeText(app, "Capture", Toast.LENGTH_SHORT).show();
-    }
-
+   
     /*
          * Get the camera
          */
@@ -129,7 +138,7 @@
             //Toast.makeText(app, "Close", Toast.LENGTH_SHORT).show();
         }
     }
-    
+
 
     @Override
     protected void onPause() {
@@ -146,4 +155,27 @@
 //        if(hasFlash)
 //            turnOnFlash();
     }
-```
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        turnOnFlash();
+
+        // on starting the app get the camera params
+//        getCamera();
+        //getCameraInstance();
+
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+
+        // on stop release the camera
+        if (camera != null) {
+            camera.release();
+            camera = null;
+        }
+    }
+    
+    ```
