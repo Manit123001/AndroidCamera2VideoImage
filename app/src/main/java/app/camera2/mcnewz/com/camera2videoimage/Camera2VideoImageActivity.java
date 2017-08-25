@@ -783,6 +783,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         if (mMediaRecorder != null) {
             mMediaRecorder.release();
             mMediaRecorder = null;
+
         }
     }
 
