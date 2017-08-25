@@ -2,6 +2,7 @@ package app.camera2.mcnewz.com.camera2videoimage;
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
@@ -14,8 +15,11 @@ import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.media.CamcorderProfile;
+import android.media.Image;
 import android.media.ImageReader;
 import android.media.MediaRecorder;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
@@ -26,6 +30,7 @@ import android.support.annotation.NonNull;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
 import android.view.Surface;
@@ -36,7 +41,9 @@ import android.widget.ImageButton;
 import android.widget.Toast;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,6 +53,7 @@ import java.util.Date;
 import java.util.List;
 
 // TODO: Part 1 How to add icons using android studio
+//555
 
 // TODO: Part 9 Connecting to the camera & getting CameraDevice
 // <in AndroidManafest.xml> add <uses-permission android:name="android.permission.CAMERA"/>
@@ -59,6 +67,23 @@ import java.util.List;
 // onCreate called the method createVideoFolder();
 // create method private File createVideoFileName(){...}
 // create method private void checkWriteStoragePer(){...} permission -*- request
+
+// TODO: Part 19 recording audio with video
+// Config Manifest add <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+// in connectCamera() add Manifest.permission.RECORD_AUDIO inrequestPermission
+
+
+// TODO: Part 21 Part 21 Updating MediaStore database
+// add
+//    Intent mediaStoreUpdateIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+//                mediaStoreUpdateIntent.setData(Uri.fromFile(new File(mImageFileName)));
+//    sendBroadcast(mediaStoreUpdateIntent);
+// add to onCreate
+// to mRecordImageButton.setOnClickListener(..){..}
+//mVideoFileName
+//    Intent mediaStoreUpdateIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+//                mediaStoreUpdateIntent.setData(Uri.fromFile(new File(mVideoFileName)));
+//    sendBroadcast(mediaStoreUpdateIntent);
 
 
 public class Camera2VideoImageActivity extends AppCompatActivity {
@@ -173,31 +198,41 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     // private int mCaptureState = STATE_PREVIEW;
     // add previewSurface, mImageReader.getSurface()
     // create method lockFocus(){...}
+    // case STATE_WAIT_LOCK ..... Integer afState = captureResult.get(CaptureResult.CONTROL_AE_STATE);
+    // onCreate() add findViewById
+    // mStillImageButton();
     // create btnCapture and called lockFocus();
-
     private Size mImageSize;
     private ImageReader mImageReader;
-    private final ImageReader.OnImageAvailableListener mOnImageAvailableListener = new
-            ImageReader.OnImageAvailableListener() {
+    private final ImageReader.OnImageAvailableListener mOnImageAvailableListener =
+            new ImageReader.OnImageAvailableListener() {
                 @Override
                 public void onImageAvailable(ImageReader reader) {
-                    /// test
+                    mBackgroundHandler.post(new ImageSaver(reader.acquireLatestImage()));
+
                 }
             };
     private CameraCaptureSession mPreviewCaptureSession;
     private CameraCaptureSession.CaptureCallback mPreviewCaptureCallback = new
             CameraCaptureSession.CaptureCallback() {
+
                 private void process(CaptureResult captureResult) {
                     switch (mCaptureState) {
                         case STATE_PREVIEW:
                             // Do nothing
+
                             break;
                         case STATE_WAIT_LOCK:
                             mCaptureState = STATE_PREVIEW;
-                            Integer afState = captureResult.get(CaptureResult.CONTROL_AE_STATE);
-                            if (afState == captureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
-                                    afState == CaptureRequest.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED) {
-                                Toast.makeText(getApplicationContext(), "AF Locked!!", Toast.LENGTH_SHORT).show();
+                            Integer afState = captureResult.get(CaptureResult.CONTROL_AF_STATE);
+                            //Toast.makeText(getApplicationContext(), afState + "check Key back" + CaptureRequest.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED, Toast.LENGTH_SHORT).show();
+
+                            if (afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
+                                    afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED) {
+                                Toast.makeText(getApplicationContext(), "AF Locked!", Toast.LENGTH_SHORT).show();
+
+                                // part 17
+                                startStillCaptureRequest();
                             }
                             break;
                     }
@@ -210,6 +245,51 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                     process(result);
                 }
             };
+
+    // TODO: Part 18 taking a photo while recording
+    // add mRecordCaptureSession = session; in startRecord(){...}
+    // add mCameraDevice.createCaptureSession(Arrays.asList(previewSurface, recordSurface, mImageReader.getSurface()),
+    // add mRecordCaptureSession.capture(mCaptureRequestBuilder.build(),mRecordCaptureCallback, mBackgroundHandler); check if else
+    // add mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_VIDEO_SNAPSHOT); in startStillCaptureRequest() check if else
+    // add mRecordCaptureSession.capture(mCaptureRequestBuilder.build(), stillCaptureCallback, null);
+    private CameraCaptureSession mRecordCaptureSession;
+    private CameraCaptureSession.CaptureCallback mRecordCaptureCallback = new
+            CameraCaptureSession.CaptureCallback() {
+
+                private void process(CaptureResult captureResult) {
+                    switch (mCaptureState) {
+                        case STATE_PREVIEW:
+                            // Do nothing
+
+                            break;
+                        case STATE_WAIT_LOCK:
+                            mCaptureState = STATE_PREVIEW;
+                            Integer afState = captureResult.get(CaptureResult.CONTROL_AF_STATE);
+                            //Toast.makeText(getApplicationContext(), afState + "check Key back" + CaptureRequest.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED, Toast.LENGTH_SHORT).show();
+
+                            if (afState == CaptureResult.CONTROL_AF_STATE_FOCUSED_LOCKED ||
+                                    afState == CaptureResult.CONTROL_AF_STATE_NOT_FOCUSED_LOCKED) {
+                                Toast.makeText(getApplicationContext(), "AF Locked!", Toast.LENGTH_SHORT).show();
+
+                                // part 17
+                                startStillCaptureRequest();
+                            }
+                            break;
+                    }
+                }
+
+                @Override
+                public void onCaptureCompleted(@NonNull CameraCaptureSession
+                                                       session, @NonNull CaptureRequest request, @NonNull TotalCaptureResult result) {
+                    super.onCaptureCompleted(session, request, result);
+
+                    process(result);
+                }
+            };
+
+
+    // part 16
+    private ImageButton mStillImageButton;
 
 
     // TODO: Part 15 adding a chronometer timer for recording
@@ -230,12 +310,85 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     private ImageButton mRecordImageButton;
     private boolean mIsRecording = false;
 
-    // part 16
-    private ImageButton mStillImageButton;
+    // TODO Part 20  Part 20 time-lapse recording
+    // add image assent
+    // create mIsTimelapse ....
+    // go to onclick of btn Record  mRecordImageButton.setOnClickListener
+    // add mRecordImageButton.setOnLongClickListener
+    // delete mIsRecording = true and mRecordImageButton.setImageResource(...) in a checkWriteStoragePermission
+    //part 20 delete here
+//                mIsRecording = true;
+//                mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
+    //go to onCreate
+    // private void setupTimelapse() throws IOException { (copy setupMediaRecorder and paste
+    //if (mIsRecording) {
+//    setupMediaRecorder();
+//} else if (mIsTimelapse) {
+//        setupTimelapse();
+//        }
+
+    //go to onCreate() if (mIsRecording || mIsTimelapse) add  || mIsTimelapse and mIsTimelapse = false;
+    private boolean mIsTimelapse = false;
+
 
     // part 12 create parametor
     private File mVideoFolder;
     private String mVideoFileName;
+
+
+    // TODO: Part 17 capturing still image in preview mode
+    // copy method createVideoFileName(){...}
+    // copy createVideoFolder(){...}
+    // change name .>>>> createImageFolder(){...} , createStil
+    // called createImageFolder(); in onCreate(){...}
+    // create method  startStillCaptureRequest(){
+    // go to CameraCaptureSession.CaptureCallback mPreviewCaptureCallback = new ....
+    // called startStillCaptureRequest(); in STATE_WAIT_LOCK
+    // create inner class private class ImageSaver implements Runnable{{...}
+    // called mBackgroundHandler.post(new ImageSaver(reader.acquireLatestImage())); in mOnImageAvailableListener = new .....
+    private File mImageFolder;
+    private String mImageFileName;
+
+    private class ImageSaver implements Runnable {
+        private final Image mImage;
+
+        public ImageSaver(Image image) {
+            mImage = image;
+        }
+
+        @Override
+        public void run() {
+            ByteBuffer byteBuffer = mImage.getPlanes()[0].getBuffer();
+            byte[] bytes = new byte[byteBuffer.remaining()];
+            byteBuffer.get(bytes);
+
+            FileOutputStream fileOutputStream = null;
+            try {
+                fileOutputStream = new FileOutputStream(mImageFileName);
+                fileOutputStream.write(bytes);
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                mImage.close();
+
+                // part 21
+                Intent mediaStoreUpdateIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+                mediaStoreUpdateIntent.setData(Uri.fromFile(new File(mImageFileName)));
+                sendBroadcast(mediaStoreUpdateIntent);
+
+
+                if (fileOutputStream != null) {
+                    try {
+                        fileOutputStream.close();
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+
+        }
+    }
+
 
     // TODO: part 7 Adjusting orientation for calculating preview size
     private static SparseIntArray ORIENTATIONS = new SparseIntArray();
@@ -253,8 +406,8 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
         @Override
         public int compare(Size lhs, Size rhs) {
-            return Long.signum((long) (lhs.getWidth() * lhs.getHeight() -
-                    (long) rhs.getWidth() * rhs.getHeight()));
+            return Long.signum(lhs.getWidth() * lhs.getHeight() -
+                    (long) rhs.getWidth() * rhs.getHeight());
         }
     }
 
@@ -266,43 +419,76 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
         createVideoFolder(); // part 12
 
+        createImageFolder(); // part 17
+
         mMediaRecorder = new MediaRecorder(); // part 13
 
         // part 15
         mChronometer = (Chronometer) findViewById(R.id.chronometer);
+
+        // find View TextureView Here
+        mTextureView = (TextureView) findViewById(R.id.textureView);
 
         // part 16
         mStillImageButton = (ImageButton) findViewById(R.id.cameraImageButton2);
         mStillImageButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+
+                if (!(mIsTimelapse || mIsRecording)) {
+                    checkWriteStoragePermission();
+                }
+
+                //Toast.makeText(Camera2VideoImageActivity.this, "test", Toast.LENGTH_SHORT).show();
                 lockFocus();
             }
         });
 
 
-        // find View TextureView Here
-        mTextureView = (TextureView) findViewById(R.id.textureView);
         mRecordImageButton = (ImageButton) findViewById(R.id.videoOnlineImageButton);
         mRecordImageButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (mIsRecording) {
+                if (mIsRecording || mIsTimelapse) {
                     // part 15
                     mChronometer.stop();
                     mChronometer.setVisibility(View.INVISIBLE);
 
                     mIsRecording = false;
+                    mIsTimelapse = false; // part 20
                     mRecordImageButton.setImageResource(R.mipmap.btn_video_online);
 
                     mMediaRecorder.stop();
                     mMediaRecorder.reset();
+
+                    //part 21
+                    Intent mediaStoreUpdateIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+                    mediaStoreUpdateIntent.setData(Uri.fromFile(new File(mVideoFileName)));
+                    sendBroadcast(mediaStoreUpdateIntent);
+
+
                     startPreview();
                 } else {
+                    //part 20 post here
+                    mIsRecording = true;
+                    mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
+
                     checkWriteStoragePermission();
                 }
             }
         });
+
+        // part 20
+        mRecordImageButton.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                mIsTimelapse = true;
+                mRecordImageButton.setImageResource(R.mipmap.btn_timelapse);
+                checkWriteStoragePermission();
+                return true;
+            }
+        });
+
     }
 
 
@@ -326,9 +512,14 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
         if (requestCode == REQUEST_CAMERAPERMISSION_RESULT) {
-            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            if (grantResults[0] != PackageManager.PERMISSION_GRANTED) {
 
                 Toast.makeText(getApplicationContext(), "Application will not run without camera services", Toast.LENGTH_SHORT).show();
+            }
+            // part 19
+            if (grantResults[1] != PackageManager.PERMISSION_GRANTED) {
+                Toast.makeText(getApplicationContext(),
+                        "Application will not have autdio on record", Toast.LENGTH_SHORT).show();
             }
         }
 
@@ -362,6 +553,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     }
 
     // TODO: Part 2 Converting app to full screen sticky immersive mode
+
     @Override
     public void onWindowFocusChanged(boolean hasFocas) {
         super.onWindowFocusChanged(hasFocas);
@@ -391,6 +583,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
                 StreamConfigurationMap map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
 
+
                 int deviceOrientation = getWindowManager().getDefaultDisplay().getRotation();
                 //int totalRotation = sensorToDeviceRataion(cameraCharacteristics, deviceOrientation);
                 mTotalRotation = sensorToDeviceRataion(cameraCharacteristics, deviceOrientation);
@@ -412,6 +605,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                 mImageReader = ImageReader.newInstance(mImageSize.getWidth(), mImageSize.getHeight(), ImageFormat.JPEG, 1);
                 mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
 
+
                 mCameraId = cameraId;
                 return;
             }
@@ -419,8 +613,6 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             e.printStackTrace();
         }
     }
-
-
     // user permission camera here
     private void connectCamera() {
         CameraManager cameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
@@ -436,7 +628,8 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                         Toast.makeText(this, "Video app required access to camera", Toast.LENGTH_SHORT).show();
                     }
 
-                    requestPermissions(new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERAPERMISSION_RESULT);
+                    requestPermissions(new String[]{android.Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO
+                    }, REQUEST_CAMERAPERMISSION_RESULT);
                 }
 
             } else {
@@ -462,7 +655,12 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     // add to private CameraDevice mCameraDevice
     private void startRecord() {
         try {
-            setupMediaRecorder();
+            //part 20 check if else
+            if (mIsRecording) {
+                setupMediaRecorder();
+            } else if (mIsTimelapse) {
+                setupTimelapse(); // part 20
+            }
 
             SurfaceTexture surfaceTexture = mTextureView.getSurfaceTexture();
             surfaceTexture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
@@ -473,12 +671,13 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             mCaptureRequestBuilder.addTarget(previewSurface);
             mCaptureRequestBuilder.addTarget(recordSurface);
 
-            mCameraDevice.createCaptureSession(Arrays.asList(previewSurface, recordSurface),
+            mCameraDevice.createCaptureSession(Arrays.asList(previewSurface, recordSurface, mImageReader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession session) {
+                            mRecordCaptureSession = session;
                             try {
-                                session.setRepeatingRequest(
+                                mRecordCaptureSession.setRepeatingRequest(
                                         mCaptureRequestBuilder.build(), null, null
                                 );
                             } catch (CameraAccessException e) {
@@ -511,6 +710,8 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                     new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession session) {
+                            Log.d("startPreview", "onConfigured: startPreview");
+
                             mPreviewCaptureSession = session;
 
                             try {
@@ -535,11 +736,53 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         }
     }
 
+    public void startStillCaptureRequest() {
+
+        try {
+            if (mIsRecording) {
+                // part 18 add if else
+                mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_VIDEO_SNAPSHOT);
+            } else {
+                mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
+            }
+
+
+            mCaptureRequestBuilder.addTarget(mImageReader.getSurface());
+            mCaptureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, mTotalRotation);
+
+
+            CameraCaptureSession.CaptureCallback stillCaptureCallback = new
+                    CameraCaptureSession.CaptureCallback() {
+                        @Override
+                        public void onCaptureStarted(@NonNull CameraCaptureSession session, @NonNull CaptureRequest request, long timestamp, long frameNumber) {
+                            super.onCaptureStarted(session, request, timestamp, frameNumber);
+                            try {
+                                createImageFileName();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    };
+            if (mIsRecording) {
+                // part 18 add if else
+                mRecordCaptureSession.capture(mCaptureRequestBuilder.build(), stillCaptureCallback, null);
+            } else {
+                mPreviewCaptureSession.capture(mCaptureRequestBuilder.build(), stillCaptureCallback, null);
+            }
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
 
     private void closeCamera() {
         if (mCameraDevice != null) {
             mCameraDevice.close();
             mCameraDevice = null;
+        }
+
+        if (mMediaRecorder != null) {
+            mMediaRecorder.release();
+            mMediaRecorder = null;
         }
     }
 
@@ -586,7 +829,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
     private void createVideoFolder() {
         File movieFile = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES);
-        mVideoFolder = new File(movieFile, "camera2videoImage");
+        mVideoFolder = new File(movieFile, "camera2VideoImage");
         if (!mVideoFolder.exists()) {
             mVideoFolder.mkdirs();
         }
@@ -597,8 +840,23 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         String prepend = "VIDEO_" + timestamp + "_";
         File videoFile = File.createTempFile(prepend, ".mp4", mVideoFolder);
         mVideoFileName = videoFile.getAbsolutePath();
-
         return videoFile;
+    }
+
+    private void createImageFolder() {
+        File imageFile = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
+        mImageFolder = new File(imageFile, "camera2VideoImage");
+        if (!mImageFolder.exists()) {
+            mImageFolder.mkdirs();
+        }
+    }
+
+    private File createImageFileName() throws IOException {
+        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        String prepend = "IMAGE_" + timestamp + "_";
+        File imageFile = File.createTempFile(prepend, ".jpg", mImageFolder);
+        mImageFileName = imageFile.getAbsolutePath();
+        return imageFile;
     }
 
     private void checkWriteStoragePermission() {
@@ -606,23 +864,26 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
                     == PackageManager.PERMISSION_GRANTED) {
 
-                mIsRecording = true;
-                mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
+                //part 20 delete here
+//                mIsRecording = true;
+//                mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
                 try {
                     createVideoFileName();
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
 
-                // part 14
-                startRecord();
-                mMediaRecorder.start();
 
-                //part 15
-                mChronometer.setBase(SystemClock.elapsedRealtime());
-                mChronometer.setVisibility(View.VISIBLE);
-                mChronometer.start();
+                if (mIsTimelapse || mIsRecording) {
+                    // part 14
+                    startRecord();
+                    mMediaRecorder.start();
 
+                    //part 15
+                    mChronometer.setBase(SystemClock.elapsedRealtime());
+                    mChronometer.setVisibility(View.VISIBLE);
+                    mChronometer.start();
+                }
             } else {
                 if (shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
                     Toast.makeText(this, "app needs to be able to save videos", Toast.LENGTH_SHORT).show();
@@ -631,8 +892,10 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             }
 
         } else {
-            mIsRecording = true;
-            mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
+            //part 20 delete here
+//          mIsRecording = true;
+//          mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
+
             try {
                 createVideoFileName();
             } catch (IOException e) {
@@ -643,31 +906,50 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             startRecord();
             mMediaRecorder.start();
 
+            mChronometer.setBase(SystemClock.elapsedRealtime());
+            mChronometer.setVisibility(View.VISIBLE);
+            mChronometer.start();
         }
 
     }
 
     private void setupMediaRecorder() throws IOException {
-        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
 
+        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC); // part 19
         mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
         mMediaRecorder.setOutputFile(mVideoFileName);
         mMediaRecorder.setVideoEncodingBitRate(1000000);
         mMediaRecorder.setVideoFrameRate(30);
         mMediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
         mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+        mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC); // part 19
         mMediaRecorder.setOrientationHint(mTotalRotation);
         mMediaRecorder.prepare();
 
     }
 
+    // part 20 setupTimelapse
+    private void setupTimelapse() throws IOException {
+        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        mMediaRecorder.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_TIME_LAPSE_HIGH));
+        mMediaRecorder.setOutputFile(mVideoFileName);
+        mMediaRecorder.setCaptureRate(2);
+        mMediaRecorder.setOrientationHint(mTotalRotation);
+        mMediaRecorder.prepare();
+
+    }
+
+
     private void lockFocus() {
         mCaptureState = STATE_WAIT_LOCK;
         mCaptureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
-
         try {
-            mPreviewCaptureSession.capture(mCaptureRequestBuilder.build(), mPreviewCaptureCallback, mBackgroundHandler);
-
+            if (mIsRecording) {
+                mRecordCaptureSession.capture(mCaptureRequestBuilder.build(), mRecordCaptureCallback, mBackgroundHandler);
+            } else {
+                mPreviewCaptureSession.capture(mCaptureRequestBuilder.build(), mPreviewCaptureCallback, mBackgroundHandler);
+            }
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
